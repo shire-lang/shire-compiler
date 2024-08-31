@@ -1,5 +1,5 @@
 [package]
-name = "compiler"
+name = "shire-core"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,3 +8,6 @@ nom = "7"
 
 # This library provides a streaming parser for locating URLs.
 urlocator = "0.1.4"
+
+[lib]
+path = "src/lib.rs"

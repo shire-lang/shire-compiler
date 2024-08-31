@@ -1,2 +1,2 @@
 [workspace]
-members = ["compiler"]
+members = ["shire", "shire-core", "shire-cli", "shire-wasm", "shire"]
