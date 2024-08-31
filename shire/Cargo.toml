@@ -2,5 +2,12 @@
 name = "shire"
 version = "0.1.0"
 edition = "2021"
+authors = ["Phodal Huang <h@phodal.com>"]
+description = "The Rust version of Shire"
+license = "MPL-2.0"
+repository = "https://github.com/shire-lang/shire-compiler"
+readme = "README.md"
+keywords = ["compiler", "language", "rust"]
+categories = ["development-tools", "compilers"]
 
 [dependencies]
