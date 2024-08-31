@@ -1,4 +1,4 @@
-pub mod lexer;
+pub mod markdown;
 
 fn main() {
     println!("Hello, world!");

@@ -508,7 +508,7 @@ pub fn parse<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::Expression::*;
+    use crate::markdown::Expression::*;
     use super::*;
 
     fn test_parse_all_styles(input: &str, expected: Vec<Expression>) {
