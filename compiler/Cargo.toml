@@ -1,0 +1,10 @@
+[package]
+name = "compiler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nom = "7"
+
+# This library provides a streaming parser for locating URLs.
+urlocator = "0.1.4"
