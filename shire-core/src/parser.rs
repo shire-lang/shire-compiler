@@ -12,7 +12,7 @@ use nom::{
     IResult,
 };
 use std::collections::HashMap;
-use crate::parser::VariableValue::Action;
+use crate::parser::VariableTransform::Action;
 
 #[derive(Debug, PartialEq)]
 enum Function {
@@ -22,26 +22,136 @@ enum Function {
 }
 
 #[derive(Debug, PartialEq)]
-enum VariableValue {
+enum VariableTransform {
     String(String),
     Integer(i32),
     PatternAction { pattern: String, command: Function },
     Action { command: Function },
     Case {
         pattern: String,
-        cases: HashMap<String, VariableValue>,
+        cases: HashMap<String, VariableTransform>,
         default: Option<Function>,
     },
 }
 
 #[derive(Debug, PartialEq)]
-struct Variables {
-    variables: HashMap<String, VariableValue>,
+enum InteractionType {
+    AppendCursor,
+    AppendCursorStream,
+    OutputFile,
+    ReplaceSelection,
+    ReplaceCurrentFile,
+    InsertBeforeSelection,
+    RunPanel,
+    OnPaste,
+}
+
+/// TODO: implement the description trait for InteractionType
+trait description {
+    fn description(&self) -> &str;
+}
+
+impl InteractionType {
+    fn description(&self) -> &str {
+        match self {
+            InteractionType::AppendCursor => "Append content at the current cursor position",
+            InteractionType::AppendCursorStream => "Append content at the current cursor position, stream output",
+            InteractionType::OutputFile => "Output to a new file",
+            InteractionType::ReplaceSelection => "Replace the currently selected content",
+            InteractionType::ReplaceCurrentFile => "Replace the content of the current file",
+            InteractionType::InsertBeforeSelection => "Insert content before the currently selected content",
+            InteractionType::RunPanel => "Show Result in Run panel which is the bottom of the IDE",
+            InteractionType::OnPaste => "Copy the content to the clipboard",
+        }
+    }
+
+    fn from(interaction: &str) -> InteractionType {
+        match interaction.to_lowercase().as_str() {
+            "appendcursor" => InteractionType::AppendCursor,
+            "appendcursorstream" => InteractionType::AppendCursorStream,
+            "outputfile" => InteractionType::OutputFile,
+            "replaceselection" => InteractionType::ReplaceSelection,
+            "replacecurrentfile" => InteractionType::ReplaceCurrentFile,
+            "insertbeforeselection" => InteractionType::InsertBeforeSelection,
+            "runpanel" => InteractionType::RunPanel,
+            "onpaste" => InteractionType::OnPaste,
+            _ => InteractionType::RunPanel,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum ShireActionLocation {
+    ContextMenu,
+    IntentionMenu,
+    TerminalMenu,
+    CommitMenu,
+    RunPanel,
+    InputBox,
+}
+
+impl ShireActionLocation {
+    fn location(&self) -> &str {
+        match self {
+            ShireActionLocation::ContextMenu => "ContextMenu",
+            ShireActionLocation::IntentionMenu => "IntentionMenu",
+            ShireActionLocation::TerminalMenu => "TerminalMenu",
+            ShireActionLocation::CommitMenu => "CommitMenu",
+            ShireActionLocation::RunPanel => "RunPanel",
+            ShireActionLocation::InputBox => "InputBox",
+        }
+    }
+
+    fn description(&self) -> &str {
+        match self {
+            ShireActionLocation::ContextMenu => "Show in Context Menu by Right Click",
+            ShireActionLocation::IntentionMenu => "Show in Intention Menu by Alt+Enter",
+            ShireActionLocation::TerminalMenu => "Show in Terminal panel menu bar",
+            ShireActionLocation::CommitMenu => "Show in Commit panel menu bar",
+            ShireActionLocation::RunPanel => "Show in Run panel which is the bottom of the IDE",
+            ShireActionLocation::InputBox => "Show in Input Box",
+        }
+    }
+
+    fn from(action_location: &str) -> ShireActionLocation {
+        match action_location {
+            "ContextMenu" => ShireActionLocation::ContextMenu,
+            "IntentionMenu" => ShireActionLocation::IntentionMenu,
+            "TerminalMenu" => ShireActionLocation::TerminalMenu,
+            "CommitMenu" => ShireActionLocation::CommitMenu,
+            "RunPanel" => ShireActionLocation::RunPanel,
+            "InputBox" => ShireActionLocation::InputBox,
+            _ => ShireActionLocation::RunPanel,
+        }
+    }
+
+    fn all() -> Vec<ShireActionLocation> {
+        vec![
+            ShireActionLocation::ContextMenu,
+            ShireActionLocation::IntentionMenu,
+            ShireActionLocation::TerminalMenu,
+            ShireActionLocation::CommitMenu,
+            ShireActionLocation::RunPanel,
+            ShireActionLocation::InputBox,
+        ]
+    }
+
+    fn default() -> &'static str {
+        ShireActionLocation::ContextMenu.location()
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct HobbitHole {
+    name: String,
+    description: Option<String>,
+    interaction: Option<InteractionType>,
+    variables: HashMap<String, VariableTransform>,
 }
 
 #[derive(Debug, PartialEq)]
 struct ShireFile {
-    variables: Variables,
+    hobbit: HobbitHole,
     body: Vec<String>, // This represents the body where `$var1` is located.
 }
 
@@ -79,7 +189,7 @@ fn parse_function(input: &str) -> IResult<&str, (String, Vec<String>)> {
 
 /// Parser for pattern action
 /// for example: `/.*.java/ { grep("error.log") | sort | xargs("rm") }`
-fn parse_pattern_actions(input: &str) -> IResult<&str, VariableValue> {
+fn parse_pattern_actions(input: &str) -> IResult<&str, VariableTransform> {
     let (input, pattern) = delimited(tag("/"), is_not("/"), tag("/"))(input)?;
 
     let (input, functions) = delimited(
@@ -92,18 +202,18 @@ fn parse_pattern_actions(input: &str) -> IResult<&str, VariableValue> {
     )(input)?;
 
 
-    Ok((input, VariableValue::PatternAction {
+    Ok((input, VariableTransform::PatternAction {
         pattern: pattern.to_string(),
         command: Function::Functions(functions),
     }))
 }
 
 // Parser for case blocks
-fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
+fn parse_case_block(input: &str) -> IResult<&str, VariableTransform> {
     let (input, pattern) = delimited(tag("/"), is_not("/"), tag("/"))(input)?;
     let (input, _) = delimited(multispace0, tag("{"), multispace0)(input)?;
 
-    let mut cases: HashMap<String, VariableValue> = HashMap::new();
+    let mut cases: HashMap<String, VariableTransform> = HashMap::new();
     let mut default = None;
     let (mut input, _) = fold_many0(
         terminated(
@@ -131,26 +241,24 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
 
     let (input, _) = delimited(multispace0, tag("}"), multispace0)(input)?;
 
-    Ok((input, VariableValue::Case {
+    Ok((input, VariableTransform::Case {
         pattern: pattern.to_string(),
         cases: cases,
         default,
     }))
 }
 
-// Parser for integer
-fn parse_integer(input: &str) -> IResult<&str, VariableValue> {
+fn parse_integer(input: &str) -> IResult<&str, VariableTransform> {
     let (input, digits) = digit1(input)?;
     let value = digits.parse::<i32>().unwrap();
-    Ok((input, VariableValue::Integer(value)))
+    Ok((input, VariableTransform::Integer(value)))
 }
 
-// Parser for a variable value
-fn parse_variable_value(input: &str) -> IResult<&str, VariableValue> {
+fn parse_variable_value(input: &str) -> IResult<&str, VariableTransform> {
     alt((
         parse_pattern_actions,
         parse_case_block,
-        map(parse_quoted_string, VariableValue::String),
+        map(parse_quoted_string, VariableTransform::String),
         parse_integer,
     ))(input)
 }
@@ -159,7 +267,7 @@ fn parse_variable_value(input: &str) -> IResult<&str, VariableValue> {
 /// parse for key value pair value
 /// for example: `"var1": "demo"`
 ///
-fn parse_variable(input: &str) -> IResult<&str, (String, VariableValue)> {
+fn parse_variable(input: &str) -> IResult<&str, (String, VariableTransform)> {
     let (input, (key, value)) = tuple((
         // for string
         preceded(multispace0, delimited(tag("\""), is_not("\""), tag("\""))),
@@ -190,7 +298,7 @@ fn parse_frontmatter_end(input: &str) -> IResult<&str, ()> {
 }
 
 // 解析变量块
-fn parse_hobbit_hole(input: &str) -> IResult<&str, Variables> {
+fn parse_hobbit_hole(input: &str) -> IResult<&str, HobbitHole> {
     let (input, _) = parse_frontmatter_start(input)?;
     let (input, _) = tuple((multispace0, tag("variables"), multispace0, tag(":")))(input)?;
 
@@ -204,14 +312,20 @@ fn parse_hobbit_hole(input: &str) -> IResult<&str, Variables> {
     )(input)?;
 
     let (input, _) = parse_frontmatter_end(input)?;
-    Ok((input, Variables { variables: vars }))
+    Ok((input, HobbitHole {
+        name: "".to_string(),
+        description: None,
+        interaction: None,
+        variables: vars
+    }))
 }
 
 // Parser for the entire file
 fn parse_file(input: &str) -> IResult<&str, ShireFile> {
     let (input, variables) = parse_hobbit_hole(input)?;
     let (input, body) = many1(parse_string)(input)?; // Simplified for demonstration
-    Ok((input, ShireFile { variables, body }))
+    /// collect Variable Table in body
+    Ok((input, ShireFile { hobbit: variables, body }))
 }
 
 #[cfg(test)]
@@ -219,12 +333,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_should_parse_multiple_frontmatter_config() {
+        let input = r#"
+---
+name: "Summary"
+description: "Generate Summary"
+interaction: AppendCursor
+actionLocation: ContextMenu
+variables:
+  "var1": "demo"
+---
+"#;
+
+        let result = parse_hobbit_hole(input);
+        // assert_eq!(
+        //     result,
+        //     Ok((
+        //         "",
+        //         Variables {
+        //             variables: vec![
+        //                 ("name".to_string(), VariableValue::String("Summary".to_string())),
+        //                 ("description".to_string(), VariableValue::String("Generate Summary".to_string())),
+        //                 ("interaction".to_string(), VariableValue::String("AppendCursor".to_string())),
+        //                 ("actionLocation".to_string(), VariableValue::String("ContextMenu".to_string())),
+        //                 ("var1".to_string(), VariableValue::String("demo".to_string())),
+        //             ].into_iter().collect()
+        //         }
+        //     ))
+        // );
+
+    }
+
+    #[test]
     fn test_parse_regex_block() {
         assert_eq!(
             parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\") }"),
             Ok((
                 "",
-                VariableValue::PatternAction {
+                VariableTransform::PatternAction {
                     pattern: ".*.java".to_string(),
                     command: Function::Functions(vec![
                         ("grep".to_string(), vec!["error.log".to_string()]),
@@ -246,17 +392,20 @@ variables:
   "var2": /.*.java/ { grep("error.log") | sort | xargs("rm")}
 ---
 "#
-        ;
+            ;
 
         assert_eq!(
             parse_hobbit_hole(input),
             Ok((
                 "",
-                Variables {
+                HobbitHole {
+                    name: "".to_string(),
+                    description: None,
+                    interaction: None,
                     variables: vec![
-                        ("var1".to_string(), VariableValue::String("demo".to_string())),
-                        ("var1".to_string(), VariableValue::Integer(42)),
-                        ("var2".to_string(), VariableValue::PatternAction {
+                        ("var1".to_string(), VariableTransform::String("demo".to_string())),
+                        ("var1".to_string(), VariableTransform::Integer(42)),
+                        ("var2".to_string(), VariableTransform::PatternAction {
                             pattern: ".*.java".to_string(),
                             command: Function::Functions(vec![
                                 ("grep".to_string(), vec!["error.log".to_string()]),
@@ -286,9 +435,12 @@ $var1
             Ok((
                 "\n",
                 ShireFile {
-                    variables: Variables {
+                    hobbit: HobbitHole {
+                        name: "".to_string(),
+                        description: None,
+                        interaction: None,
                         variables: vec![
-                            ("var2".to_string(), VariableValue::PatternAction {
+                            ("var2".to_string(), VariableTransform::PatternAction {
                                 pattern: ".*.java".to_string(),
                                 command: Function::Functions(vec![
                                     ("grep".to_string(), vec!["error.log".to_string()]),
