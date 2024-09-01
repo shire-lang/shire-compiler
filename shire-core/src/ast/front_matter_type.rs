@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fmt::Debug;
+use crate::ast::pattern_action_fun::VariableElement;
 use crate::ast::shire_expression::{Statement, StatementType};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -53,6 +55,7 @@ impl FrontMatterType {
                     } else {
                         "".to_string()
                     };
+
                     format!("\"{}\" {{ {} }}", k, processors)
                 }).collect();
                 format!("case \"$0\" {{\n{}\n}}", elements.join("\n"))
@@ -97,10 +100,22 @@ pub struct Processor {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct ShirePsiQueryStatement;
+pub struct ShirePsiQueryStatement {
+    from: Vec<VariableElement>,
+    where_clause: Box<StatementType>,
+    select: Vec<StatementType>,
+}
 
-impl std::fmt::Display for ShirePsiQueryStatement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "QueryStatement Display")
+impl fmt::Display for ShirePsiQueryStatement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let from_str = self.from.iter().map(|_| "VariableElement").collect::<Vec<&str>>().join(", ");
+        let select_str = self.select.iter().map(|_| "Statement").collect::<Vec<&str>>().join(", ");
+
+        write!(
+            f,
+            "from {{\n    {}\n}}\nwhere {{\n    Statement\n}}\nselect {}",
+            from_str,
+            select_str
+        )
     }
 }
