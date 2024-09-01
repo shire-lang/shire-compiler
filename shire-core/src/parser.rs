@@ -1,6 +1,7 @@
+use crate::parser::VariableTransform::Action;
 use nom::bytes::complete::take_while;
 use nom::character::complete::char;
-use nom::multi::{many0, separated_list0};
+use nom::multi::separated_list0;
 use nom::sequence::tuple;
 use nom::{
     branch::alt,
@@ -12,7 +13,6 @@ use nom::{
     IResult,
 };
 use std::collections::HashMap;
-use crate::parser::VariableTransform::Action;
 
 #[derive(Debug, PartialEq)]
 enum Function {
@@ -32,6 +32,13 @@ enum VariableTransform {
         cases: HashMap<String, VariableTransform>,
         default: Option<Function>,
     },
+}
+
+#[derive(Debug)]
+pub enum ConfigValue {
+    String(String),
+    Number(i64),
+    Object(Vec<(String, ConfigValue)>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -146,7 +153,42 @@ pub struct HobbitHole {
     name: String,
     description: Option<String>,
     interaction: Option<InteractionType>,
+    action_location: Option<ShireActionLocation>,
     variables: HashMap<String, VariableTransform>,
+}
+
+impl Default for HobbitHole {
+    fn default() -> Self {
+        HobbitHole {
+            name: "".to_string(),
+            description: None,
+            interaction: None,
+            action_location: None,
+            variables: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum HobbitHoleKey {
+    Name,
+    Description,
+    Interaction,
+    ActionLocation,
+    Variables,
+}
+
+impl From<&str> for HobbitHoleKey {
+    fn from(key: &str) -> Self {
+        match key {
+            "name" => HobbitHoleKey::Name,
+            "description" => HobbitHoleKey::Description,
+            "interaction" => HobbitHoleKey::Interaction,
+            "action_location" => HobbitHoleKey::ActionLocation,
+            "variables" => HobbitHoleKey::Variables,
+            _ => HobbitHoleKey::Name,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -248,10 +290,10 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableTransform> {
     }))
 }
 
-fn parse_integer(input: &str) -> IResult<&str, VariableTransform> {
+fn parse_integer(input: &str) -> IResult<&str, i32> {
     let (input, digits) = digit1(input)?;
     let value = digits.parse::<i32>().unwrap();
-    Ok((input, VariableTransform::Integer(value)))
+    Ok((input, value))
 }
 
 fn parse_variable_value(input: &str) -> IResult<&str, VariableTransform> {
@@ -259,7 +301,7 @@ fn parse_variable_value(input: &str) -> IResult<&str, VariableTransform> {
         parse_pattern_actions,
         parse_case_block,
         map(parse_quoted_string, VariableTransform::String),
-        parse_integer,
+        map(parse_integer, VariableTransform::Integer),
     ))(input)
 }
 
@@ -269,9 +311,7 @@ fn parse_variable_value(input: &str) -> IResult<&str, VariableTransform> {
 ///
 fn parse_variable(input: &str) -> IResult<&str, (String, VariableTransform)> {
     let (input, (key, value)) = tuple((
-        // for string
         preceded(multispace0, delimited(tag("\""), is_not("\""), tag("\""))),
-        // for patter action
         preceded(
             delimited(multispace0, tag(":"), multispace0),
             parse_variable_value,
@@ -289,7 +329,6 @@ fn parse_frontmatter_start(input: &str) -> IResult<&str, ()> {
     Ok((input, ()))
 }
 
-// 结束的 `---` 标记
 fn parse_frontmatter_end(input: &str) -> IResult<&str, ()> {
     let (input, _) = multispace0(input)?;
     let (input, _) = tag("---")(input)?;
@@ -297,7 +336,6 @@ fn parse_frontmatter_end(input: &str) -> IResult<&str, ()> {
     Ok((input, ()))
 }
 
-// 解析变量块
 fn parse_hobbit_hole(input: &str) -> IResult<&str, HobbitHole> {
     let (input, _) = parse_frontmatter_start(input)?;
     let (input, _) = tuple((multispace0, tag("variables"), multispace0, tag(":")))(input)?;
@@ -316,7 +354,8 @@ fn parse_hobbit_hole(input: &str) -> IResult<&str, HobbitHole> {
         name: "".to_string(),
         description: None,
         interaction: None,
-        variables: vars
+        action_location: None,
+        variables: vars,
     }))
 }
 
@@ -346,6 +385,7 @@ variables:
 "#;
 
         let result = parse_hobbit_hole(input);
+        println!("{:?}", result);
         // assert_eq!(
         //     result,
         //     Ok((
@@ -402,6 +442,7 @@ variables:
                     name: "".to_string(),
                     description: None,
                     interaction: None,
+                    action_location: None,
                     variables: vec![
                         ("var1".to_string(), VariableTransform::String("demo".to_string())),
                         ("var1".to_string(), VariableTransform::Integer(42)),
@@ -439,6 +480,7 @@ $var1
                         name: "".to_string(),
                         description: None,
                         interaction: None,
+                        action_location: None,
                         variables: vec![
                             ("var2".to_string(), VariableTransform::PatternAction {
                                 pattern: ".*.java".to_string(),
