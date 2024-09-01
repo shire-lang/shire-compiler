@@ -1,3 +1,16 @@
+use nom::bytes::complete::take_while;
+use nom::character::complete::char;
+use nom::multi::separated_list0;
+use nom::sequence::tuple;
+use nom::{
+    branch::alt,
+    bytes::complete::{is_not, tag},
+    character::complete::{digit1, multispace0, multispace1},
+    combinator::{map, opt},
+    multi::{fold_many0, many1},
+    sequence::{delimited, preceded, separated_pair, terminated},
+    IResult,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
@@ -28,20 +41,6 @@ struct ShireFile {
     variables: Variables,
     body: Vec<String>, // This represents the body where `$var1` is located.
 }
-
-use nom::character::complete::char;
-use nom::multi::{many0, separated_list0};
-use nom::{
-    branch::alt,
-    bytes::complete::{is_not, tag},
-    character::complete::{digit1, multispace0, multispace1},
-    combinator::{map, opt},
-    multi::{fold_many0, many1},
-    sequence::{delimited, preceded, separated_pair, terminated},
-    IResult,
-};
-use nom::bytes::complete::take_while;
-use nom::sequence::tuple;
 
 // Parser for a simple string
 fn parse_string(input: &str) -> IResult<&str, String> {
