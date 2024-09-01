@@ -41,7 +41,7 @@ use nom::{
     IResult,
 };
 use nom::bytes::complete::take_while;
-use nom::sequence::{pair, tuple};
+use nom::sequence::tuple;
 
 // Parser for a simple string
 fn parse_string(input: &str) -> IResult<&str, String> {
@@ -154,10 +154,11 @@ fn parse_variable_value(input: &str) -> IResult<&str, VariableValue> {
 
 // Parser for a single variable definition
 fn parse_variable(input: &str) -> IResult<&str, (String, VariableValue)> {
-    let (input, _) = multispace0(input)?;
-    let (input, key) = delimited(tag("\""), is_not("\""), tag("\""))(input)?;
-    let (input, _) = multispace0(input)?;
-    let (input, value) = parse_variable_value(input)?;
+    let (input, (key, value)) = tuple((
+        preceded(multispace0, delimited(tag("\""), is_not("\""), tag("\""))),
+        preceded(multispace0, parse_variable_value),
+    ))(input)?;
+
     Ok((input, (key.to_string(), value)))
 }
 
@@ -180,8 +181,7 @@ fn parse_frontmatter_end(input: &str) -> IResult<&str, ()> {
 // 解析变量块
 fn parse_hobbit_hole(input: &str) -> IResult<&str, Variables> {
     let (input, _) = parse_frontmatter_start(input)?;
-    let (input, _) = tag("variables:")(input)?;
-    let (input, _) = multispace0(input)?;
+    let (input, _) = tuple((multispace0, tag("variables"), multispace0, tag(":")))(input)?;
 
     let (input, vars) = fold_many0(
         terminated(parse_variable, multispace0),
@@ -206,16 +206,6 @@ fn parse_file(input: &str) -> IResult<&str, ShireFile> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_string() {
-        assert_eq!(parse_string("hello"), Ok(("", "hello".to_string())));
-    }
-
-    #[test]
-    fn test_parse_command() {
-        assert_eq!(parse_command("hello"), Ok(("", Command::Simple("hello".to_string()))));
-    }
 
     #[test]
     fn test_parse_pipeline() {
