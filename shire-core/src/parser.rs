@@ -1,7 +1,7 @@
-use crate::parser::VariableTransform::Action;
+use crate::parser::VariableTransform::{Action, PatternAction};
 use nom::bytes::complete::take_while;
 use nom::character::complete::char;
-use nom::multi::separated_list0;
+use nom::multi::{many0, separated_list0};
 use nom::sequence::tuple;
 use nom::{
     branch::alt,
@@ -30,7 +30,7 @@ enum VariableTransform {
     Case {
         pattern: String,
         cases: HashMap<String, VariableTransform>,
-        default: Option<Function>,
+        default: Option<Box<VariableTransform>>,
     },
 }
 
@@ -232,7 +232,15 @@ fn parse_function(input: &str) -> IResult<&str, (String, Vec<String>)> {
 /// for example: `/.*.java/ { grep("error.log") | sort | xargs("rm") }`
 fn parse_pattern_actions(input: &str) -> IResult<&str, VariableTransform> {
     let (input, pattern) = delimited(tag("/"), is_not("/"), tag("/"))(input)?;
+    let (input, functions) = parse_actions(input)?;
 
+    Ok((input, VariableTransform::PatternAction {
+        pattern: pattern.to_string(),
+        command: Function::Functions(functions),
+    }))
+}
+
+fn parse_actions(input: &str) -> IResult<&str, Vec<(String, Vec<String>)>> {
     let (input, functions) = delimited(
         tuple((multispace0, tag("{"), multispace0)),
         separated_list0(
@@ -242,50 +250,66 @@ fn parse_pattern_actions(input: &str) -> IResult<&str, VariableTransform> {
         tuple((multispace0, tag("}"), multispace0)),
     )(input)?;
 
-
-    Ok((input, VariableTransform::PatternAction {
-        pattern: pattern.to_string(),
-        command: Function::Functions(functions),
-    }))
+    Ok((input, functions))
 }
 
-// Parser for case blocks
+fn parse_case_block_actions(input: &str) -> IResult<&str, (String, VariableTransform)> {
+    let (input, case) = parse_quoted_string(input)?;
+    let (input, functions) = parse_actions(input)?;
+
+    Ok((input, (case, Action {
+        command: Function::Functions(functions),
+    })))
+}
+
+/// ```shire
+/// ---
+/// variables:
+///   "log": /.*.log/ {
+///     case "$0" {
+///       "error" { grep("ERROR") | sort | xargs("notify_admin") }
+///       "warn" { grep("WARN") | sort | xargs("notify_admin") }
+///       "info" { grep("INFO") | sort | xargs("notify_user") }
+///       default  { grep("ERROR") | sort | xargs("notify_admin") }
+///     }
+///   }
+/// ---
+/// ```
 fn parse_case_block(input: &str) -> IResult<&str, VariableTransform> {
     let (input, pattern) = delimited(tag("/"), is_not("/"), tag("/"))(input)?;
     let (input, _) = delimited(multispace0, tag("{"), multispace0)(input)?;
 
-    let mut cases: HashMap<String, VariableTransform> = HashMap::new();
-    let mut default = None;
-    let (mut input, _) = fold_many0(
-        terminated(
-            separated_pair(
-                delimited(tag("\""), is_not("\""), tag("\"")),
-                multispace1,
-                parse_function,
-            ),
-            multispace0,
-        ),
-        || (),
-        |_, (key, value)| {
-            cases.insert(key.to_string(), Action { command: Function::Functions(vec![value]) });
-        },
+    /// case syntax
+    let (input, _) = delimited(
+        tag("case"),
+        tuple((multispace1, parse_quoted_string, multispace1)),
+        tuple((multispace0, tag("{"), multispace0)),
     )(input)?;
 
-    let (mut input, _) = opt(terminated(tag("default"), multispace1))(input)?;
+    let (input, cases)= many0(
+        parse_case_block_actions,
+    )(input)?;
 
-    if let Ok((remaining_input, cmd)) = parse_function(input) {
-        default = Some(
-            Function::Functions(vec![cmd])
-        );
-        input = remaining_input;
-    }
+    // parse default case
+    let (input, default) = delimited(
+        tuple((multispace0, tag("default"), multispace1)),
+        parse_actions,
+        tuple((multispace0, tag("}"), multispace0)),
+    )(input)?;
+
+    let mut cases: HashMap<String, VariableTransform> = cases.into_iter().collect();
+    cases.insert("default".to_string(), Action {
+        command: Function::Functions(default.clone()),
+    });
 
     let (input, _) = delimited(multispace0, tag("}"), multispace0)(input)?;
 
     Ok((input, VariableTransform::Case {
         pattern: pattern.to_string(),
-        cases: cases,
-        default,
+        cases,
+        default: Some(Box::new(Action {
+            command: Function::Functions(default.clone()),
+        })),
     }))
 }
 
@@ -395,7 +419,7 @@ fn parse_hobbit_hole(input: &str) -> IResult<&str, HobbitHole> {
 // Parser for the entire file
 fn parse_file(input: &str) -> IResult<&str, ShireFile> {
     let (input, variables) = parse_hobbit_hole(input)?;
-    let (input, body) = many1(parse_string)(input)?; // Simplified for demonstration
+    let (input, body) = many0(parse_string)(input)?; // Simplified for demonstration
     /// collect Variable Table in body
     Ok((input, ShireFile { hobbit: variables, body }))
 }
@@ -562,6 +586,53 @@ variables:
 "#;
 
         let result = parse_file(input);
-        println!("{:?}", result);
+        assert_eq!(result.is_ok(), true);
+
+        let binding = result.unwrap();
+        let case_block = binding.1.hobbit.variables.get("log").unwrap();
+        assert_eq!(
+            case_block,
+            &VariableTransform::Case {
+                pattern: ".*.log".to_string(),
+                cases: vec![
+                    ("error".to_string(), Action {
+                        command: Function::Functions(vec![
+                            ("grep".to_string(), vec!["ERROR".to_string()]),
+                            ("sort".to_string(), vec![]),
+                            ("xargs".to_string(), vec!["notify_admin".to_string()])
+                        ])
+                    }),
+                    ("warn".to_string(), Action {
+                        command: Function::Functions(vec![
+                            ("grep".to_string(), vec!["WARN".to_string()]),
+                            ("sort".to_string(), vec![]),
+                            ("xargs".to_string(), vec!["notify_admin".to_string()])
+                        ])
+                    }),
+                    ("info".to_string(), Action {
+                        command: Function::Functions(vec![
+                            ("grep".to_string(), vec!["INFO".to_string()]),
+                            ("sort".to_string(), vec![]),
+                            ("xargs".to_string(), vec!["notify_user".to_string()])
+                        ])
+                    }),
+                    // default
+                    ("default".to_string(), Action {
+                        command: Function::Functions(vec![
+                            ("grep".to_string(), vec!["ERROR".to_string()]),
+                            ("sort".to_string(), vec![]),
+                            ("xargs".to_string(), vec!["notify_admin".to_string()])
+                        ])
+                    })
+                ].into_iter().collect(),
+                default: Some(Box::new(Action {
+                    command: Function::Functions(vec![
+                        ("grep".to_string(), vec!["ERROR".to_string()]),
+                        ("sort".to_string(), vec![]),
+                        ("xargs".to_string(), vec!["notify_admin".to_string()])
+                    ])
+                }))
+            }
+        );
     }
 }
