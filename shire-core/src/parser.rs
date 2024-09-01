@@ -14,19 +14,21 @@ use nom::{
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
-enum Command {
-    Simple(String),
-    Pipeline(Vec<(String, Vec<String>)>), // List of command tuples (name, args)
+enum Function {
+    /// no args function
+    SimpleFunction(String),
+    /// function with args
+    FunctionWithArgs(Vec<(String, Vec<String>)>),
 }
 
 #[derive(Debug, PartialEq)]
 enum VariableValue {
     String(String),
-    Regex { pattern: String, command: Command },
+    Regex { pattern: String, command: Function },
     Case {
         pattern: String,
-        cases: HashMap<String, Command>,
-        default: Option<Command>,
+        cases: HashMap<String, Function>,
+        default: Option<Function>,
     },
     Integer(i32),
 }
@@ -51,8 +53,8 @@ fn parse_quote_string(input: &str) -> IResult<&str, String> {
     map(is_not("|\n"), |s: &str| s.to_string())(input)
 }
 
-fn parse_command(input: &str) -> IResult<&str, Command> {
-    map(parse_quote_string, Command::Simple)(input)
+fn parse_simple_function(input: &str) -> IResult<&str, Function> {
+    map(parse_quote_string, Function::SimpleFunction)(input)
     // take_while(|c: char| c.is_alphanumeric())(input)
     // let (input, command) = preceded(
     //     multispace0, // Allow optional leading whitespace
@@ -62,7 +64,6 @@ fn parse_command(input: &str) -> IResult<&str, Command> {
     // Ok((input, Command::Simple(command.to_string())))
 }
 
-// Parses a single command with optional parameters
 fn parse_function_with_args(input: &str) -> IResult<&str, (String, Vec<String>)> {
     let (input, cmd) = take_while(|c: char| c.is_alphanumeric())(input)?;
     let (input, args) = opt(preceded(
@@ -81,8 +82,7 @@ fn parse_function_with_args(input: &str) -> IResult<&str, (String, Vec<String>)>
     Ok((input, (cmd.to_string(), opt_args)))
 }
 
-// Parses a pipeline of commands
-fn parse_pipeline(input: &str) -> IResult<&str, Command> {
+fn parse_function(input: &str) -> IResult<&str, Function> {
     let (input, first_cmd) = parse_function_with_args(input)?;
     let (input, rest_cmds) = many1(preceded(
         preceded(multispace0, preceded(char('|'), multispace0)),
@@ -92,15 +92,17 @@ fn parse_pipeline(input: &str) -> IResult<&str, Command> {
     let mut cmds = vec![first_cmd];
     cmds.extend(rest_cmds);
 
-    Ok((input, Command::Pipeline(cmds)))
+    Ok((input, Function::FunctionWithArgs(cmds)))
 }
 
-/// Parser for regex pattern and command block
+/// Parser for pattern action
+/// for example: `/.*.java/ { grep("error.log") | sort | xargs("rm") }`
 fn parse_pattern_actions(input: &str) -> IResult<&str, VariableValue> {
     let (input, pattern) = delimited(tag("/"), is_not("/"), tag("/"))(input)?;
+
     let (input, command) = delimited(
         preceded(multispace0, tag("{")),
-        alt((parse_pipeline, parse_command)),
+        alt((parse_simple_function, parse_function)),
         preceded(multispace0, tag("}")),
     )(input)?;
 
@@ -120,7 +122,7 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
 
     let (mut input, _) = fold_many0(
         terminated(
-            separated_pair(delimited(tag("\""), is_not("\""), tag("\"")), multispace1, parse_command),
+            separated_pair(delimited(tag("\""), is_not("\""), tag("\"")), multispace1, parse_simple_function),
             multispace0,
         ),
         || (),
@@ -131,7 +133,7 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
 
     let (mut input, _) = opt(terminated(tag("default"), multispace1))(input)?;
 
-    if let Ok((remaining_input, cmd)) = parse_command(input) {
+    if let Ok((remaining_input, cmd)) = parse_simple_function(input) {
         default = Some(cmd);
         input = remaining_input;
     }
@@ -227,12 +229,12 @@ mod tests {
 
     #[test]
     fn test_parse_pipeline() {
-        let result = parse_pipeline("hello | world | foo");
+        let result = parse_function("hello | world | foo");
         assert_eq!(
             result,
             Ok((
                 "",
-                Command::Pipeline(vec![
+                Function::FunctionWithArgs(vec![
                     ("hello".to_string(), vec![]),
                     ("world".to_string(), vec![]),
                     ("foo".to_string(), vec![])
@@ -244,12 +246,12 @@ mod tests {
     // #[test]
     // fn test_parse_regex_block() {
     //     assert_eq!(
-    //         parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\")" }),
+    //         parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\") }" ),
     //         Ok((
     //             "",
     //             VariableValue::Regex {
     //                 pattern: ".*.java".to_string(),
-    //                 command: Command::Pipeline(vec![
+    //                 command: Function::FunctionWithArgs(vec![
     //                     ("grep".to_string(), vec!["error.log".to_string()]),
     //                     ("sort".to_string(), vec![]),
     //                     ("xargs".to_string(), vec!["rm".to_string()])
