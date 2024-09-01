@@ -9,5 +9,6 @@ members = [
     "shire",
 
     # languages
+    "language/shire-lang-core",
     "language/shire-java",
 ]

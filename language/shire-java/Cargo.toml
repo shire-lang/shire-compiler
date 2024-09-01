@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+shire-lang-core = { path = "../shire-lang-core" }
+
+tree-sitter = "0.20.10"
+tree-sitter-java = { git = "https://github.com/tree-sitter/tree-sitter-java", tag = "v0.20.0" }
