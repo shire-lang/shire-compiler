@@ -1,2 +1,13 @@
+#workspace.resolver = "2"
 [workspace]
-members = ["shire", "shire-core", "shire-cli", "shire-wasm", "shire"]
+resolver = "2"
+members = [
+    "shire",
+    "shire-core",
+    "shire-cli",
+    "shire-wasm",
+    "shire",
+
+    # languages
+    "language/shire-java",
+]
