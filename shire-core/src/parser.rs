@@ -12,23 +12,25 @@ use nom::{
     IResult,
 };
 use std::collections::HashMap;
+use crate::ast::pattern_action_fun::PatternActionFunc;
+use crate::parser::VariableValue::Action;
 
 #[derive(Debug, PartialEq)]
 enum Function {
-    /// function with args
     FunctionWithArgs(Vec<(String, Vec<String>)>),
 }
 
 #[derive(Debug, PartialEq)]
 enum VariableValue {
     String(String),
-    Regex { pattern: String, command: Function },
+    Integer(i32),
+    PatternAction { pattern: String, command: Function },
+    Action { command: Function },
     Case {
         pattern: String,
-        cases: HashMap<String, Function>,
+        cases: HashMap<String, VariableValue>,
         default: Option<Function>,
     },
-    Integer(i32),
 }
 
 #[derive(Debug, PartialEq)]
@@ -77,14 +79,13 @@ fn parse_pattern_actions(input: &str) -> IResult<&str, VariableValue> {
 
     let (input, command) = delimited(
         preceded(multispace0, tag("{")),
-        // alt((parse_simple_function, parse_function)),
         many0(parse_function),
         preceded(multispace0, tag("}")),
     )(input)?;
 
-    Ok((input, VariableValue::Regex {
+    Ok((input, VariableValue::PatternAction {
         pattern: pattern.to_string(),
-        command,
+        command: Function::FunctionWithArgs(command),
     }))
 }
 
@@ -93,24 +94,29 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
     let (input, pattern) = delimited(tag("/"), is_not("/"), tag("/"))(input)?;
     let (input, _) = delimited(multispace0, tag("{"), multispace0)(input)?;
 
-    let mut cases = HashMap::new();
+    let mut cases: HashMap<String, VariableValue> = HashMap::new();
     let mut default = None;
-
     let (mut input, _) = fold_many0(
         terminated(
-            separated_pair(delimited(tag("\""), is_not("\""), tag("\"")), multispace1, parse_function),
+            separated_pair(
+                delimited(tag("\""), is_not("\""), tag("\"")),
+                multispace1,
+                parse_function,
+            ),
             multispace0,
         ),
         || (),
         |_, (key, value)| {
-            cases.insert(key.to_string(), value);
+            cases.insert(key.to_string(), Action { command: Function::FunctionWithArgs(vec![value]) });
         },
     )(input)?;
 
     let (mut input, _) = opt(terminated(tag("default"), multispace1))(input)?;
 
     if let Ok((remaining_input, cmd)) = parse_function(input) {
-        default = Some(cmd);
+        default = Some(
+            Function::FunctionWithArgs(vec![cmd])
+        );
         input = remaining_input;
     }
 
@@ -118,7 +124,7 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
 
     Ok((input, VariableValue::Case {
         pattern: pattern.to_string(),
-        cases,
+        cases: cases,
         default,
     }))
 }
@@ -209,7 +215,7 @@ mod tests {
     //         parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\") }" ),
     //         Ok((
     //             "",
-    //             VariableValue::Regex {
+    //             VariableValue::PatternAction {
     //                 pattern: ".*.java".to_string(),
     //                 command: Function::FunctionWithArgs(vec![
     //                     ("grep".to_string(), vec!["error.log".to_string()]),
