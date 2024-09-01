@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+use crate::ast::shire_expression::{Statement, StatementType};
 
-// FrontMatterType 枚举定义
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum FrontMatterType {
     STRING(String),
     NUMBER(i32),
@@ -15,7 +15,7 @@ pub enum FrontMatterType {
     PATTERN(RuleBasedPatternAction),
     CASE_MATCH(HashMap<String, FrontMatterType>),
     VARIABLE(String),
-    EXPRESSION(Box<dyn Statement>),
+    EXPRESSION(StatementType),
     IDENTIFIER(String),
     QUERY_STATEMENT(ShirePsiQueryStatement),
 }
@@ -85,28 +85,18 @@ impl FrontMatterType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RuleBasedPatternAction {
     pattern: String,
     processors: Vec<Processor>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Processor {
     func_name: String,
 }
 
-pub trait Statement {
-    fn display(&self) -> String;
-}
-
-impl Debug for dyn Statement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Statement Debug")
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ShirePsiQueryStatement;
 
 impl std::fmt::Display for ShirePsiQueryStatement {

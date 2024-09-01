@@ -1,5 +1,7 @@
+use crate::ast::shire_expression::StatementType;
+
 // 使用derive宏自动生成调试信息
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum PatternActionFunc {
     /// Prompt variant for displaying a message prompt.
     Prompt { message: String },
@@ -39,10 +41,10 @@ pub enum PatternActionFunc {
     From { variables: Vec<VariableElement> },
 
     /// Where variant for filtering elements.
-    Where { statement: Statement },
+    Where { statement: StatementType },
 
     /// Select variant for ordering elements.
-    Select { statements: Vec<Statement> },
+    Select { statements: Vec<StatementType> },
 
     /// Execute a shire script
     ExecuteShire {
@@ -65,7 +67,7 @@ pub enum PatternActionFunc {
     /// Searching text
     Searching {
         text: String,
-        threshold: f64,
+        threshold: u64,
     },
 
     /// Caching semantic
@@ -116,12 +118,8 @@ impl std::fmt::Display for PatternActionFunc {
     }
 }
 
-// Placeholder structs to match the Kotlin code
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VariableElement; // Replace with actual implementation
 
-#[derive(Debug)]
-pub struct Statement; // Replace with actual implementation
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CaseKeyValue; // Replace with actual implementation
