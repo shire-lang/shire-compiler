@@ -1,6 +1,6 @@
 use nom::bytes::complete::take_while;
 use nom::character::complete::char;
-use nom::multi::separated_list0;
+use nom::multi::{many0, separated_list0};
 use nom::sequence::tuple;
 use nom::{
     branch::alt,
@@ -15,8 +15,6 @@ use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
 enum Function {
-    /// no args function
-    SimpleFunction(String),
     /// function with args
     FunctionWithArgs(Vec<(String, Vec<String>)>),
 }
@@ -53,18 +51,7 @@ fn parse_quote_string(input: &str) -> IResult<&str, String> {
     map(is_not("|\n"), |s: &str| s.to_string())(input)
 }
 
-fn parse_simple_function(input: &str) -> IResult<&str, Function> {
-    map(parse_quote_string, Function::SimpleFunction)(input)
-    // take_while(|c: char| c.is_alphanumeric())(input)
-    // let (input, command) = preceded(
-    //     multispace0, // Allow optional leading whitespace
-    //     take_while(|c: char| c.is_alphanumeric() || c == '_') // Match alphanumeric characters and underscores
-    // )(input)?;
-    //
-    // Ok((input, Command::Simple(command.to_string())))
-}
-
-fn parse_function_with_args(input: &str) -> IResult<&str, (String, Vec<String>)> {
+fn parse_function(input: &str) -> IResult<&str, (String, Vec<String>)> {
     let (input, cmd) = take_while(|c: char| c.is_alphanumeric())(input)?;
     let (input, args) = opt(preceded(
         multispace0,
@@ -79,20 +66,8 @@ fn parse_function_with_args(input: &str) -> IResult<&str, (String, Vec<String>)>
         Some(args) => args.into_iter().map(|s| s.to_string()).collect(),
         None => vec![],
     };
+
     Ok((input, (cmd.to_string(), opt_args)))
-}
-
-fn parse_function(input: &str) -> IResult<&str, Function> {
-    let (input, first_cmd) = parse_function_with_args(input)?;
-    let (input, rest_cmds) = many1(preceded(
-        preceded(multispace0, preceded(char('|'), multispace0)),
-        parse_function_with_args)
-    )(input)?;
-
-    let mut cmds = vec![first_cmd];
-    cmds.extend(rest_cmds);
-
-    Ok((input, Function::FunctionWithArgs(cmds)))
 }
 
 /// Parser for pattern action
@@ -102,7 +77,8 @@ fn parse_pattern_actions(input: &str) -> IResult<&str, VariableValue> {
 
     let (input, command) = delimited(
         preceded(multispace0, tag("{")),
-        alt((parse_simple_function, parse_function)),
+        // alt((parse_simple_function, parse_function)),
+        many0(parse_function),
         preceded(multispace0, tag("}")),
     )(input)?;
 
@@ -122,7 +98,7 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
 
     let (mut input, _) = fold_many0(
         terminated(
-            separated_pair(delimited(tag("\""), is_not("\""), tag("\"")), multispace1, parse_simple_function),
+            separated_pair(delimited(tag("\""), is_not("\""), tag("\"")), multispace1, parse_function),
             multispace0,
         ),
         || (),
@@ -133,7 +109,7 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
 
     let (mut input, _) = opt(terminated(tag("default"), multispace1))(input)?;
 
-    if let Ok((remaining_input, cmd)) = parse_simple_function(input) {
+    if let Ok((remaining_input, cmd)) = parse_function(input) {
         default = Some(cmd);
         input = remaining_input;
     }
@@ -226,22 +202,6 @@ fn parse_file(input: &str) -> IResult<&str, ShireFile> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_pipeline() {
-        let result = parse_function("hello | world | foo");
-        assert_eq!(
-            result,
-            Ok((
-                "",
-                Function::FunctionWithArgs(vec![
-                    ("hello".to_string(), vec![]),
-                    ("world".to_string(), vec![]),
-                    ("foo".to_string(), vec![])
-                ])
-            ))
-        );
-    }
 
     // #[test]
     // fn test_parse_regex_block() {
