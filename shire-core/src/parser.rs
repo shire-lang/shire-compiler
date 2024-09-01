@@ -86,7 +86,7 @@ fn parse_pattern_actions(input: &str) -> IResult<&str, VariableValue> {
         tuple((multispace0, tag("{"), multispace0)),
         separated_list0(
             delimited(multispace0, tag("|"), multispace0),
-            parse_function
+            parse_function,
         ),
         tuple((multispace0, tag("}"), multispace0)),
     )(input)?;
@@ -166,7 +166,7 @@ fn parse_variable(input: &str) -> IResult<&str, (String, VariableValue)> {
         // for patter action
         preceded(
             delimited(multispace0, tag(":"), multispace0),
-            parse_variable_value
+            parse_variable_value,
         ),
     ))(input)?;
 
@@ -221,7 +221,7 @@ mod tests {
     #[test]
     fn test_parse_regex_block() {
         assert_eq!(
-            parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\") }" ),
+            parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\") }"),
             Ok((
                 "",
                 VariableValue::PatternAction {
@@ -231,6 +231,40 @@ mod tests {
                         ("sort".to_string(), vec![]),
                         ("xargs".to_string(), vec!["rm".to_string()])
                     ])
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn multiple_vars() {
+        let input = r#"
+---
+variables:
+  "var1": "demo"
+  "var1": 42
+  "var2": /.*.java/ { grep("error.log") | sort | xargs("rm")}
+---
+"#
+        ;
+
+        assert_eq!(
+            parse_hobbit_hole(input),
+            Ok((
+                "",
+                Variables {
+                    variables: vec![
+                        ("var1".to_string(), VariableValue::String("demo".to_string())),
+                        ("var1".to_string(), VariableValue::Integer(42)),
+                        ("var2".to_string(), VariableValue::PatternAction {
+                            pattern: ".*.java".to_string(),
+                            command: Function::Functions(vec![
+                                ("grep".to_string(), vec!["error.log".to_string()]),
+                                ("sort".to_string(), vec![]),
+                                ("xargs".to_string(), vec!["rm".to_string()])
+                            ])
+                        })
+                    ].into_iter().collect()
                 }
             ))
         );
