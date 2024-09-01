@@ -12,12 +12,13 @@ use nom::{
     IResult,
 };
 use std::collections::HashMap;
-use crate::ast::pattern_action_fun::PatternActionFunc;
 use crate::parser::VariableValue::Action;
 
 #[derive(Debug, PartialEq)]
 enum Function {
-    FunctionWithArgs(Vec<(String, Vec<String>)>),
+    Functions(
+        Vec<(String, Vec<String>)>,
+    ),
 }
 
 #[derive(Debug, PartialEq)]
@@ -44,13 +45,17 @@ struct ShireFile {
     body: Vec<String>, // This represents the body where `$var1` is located.
 }
 
-fn parse_quote_string(input: &str) -> IResult<&str, String> {
-    // let esc = escaped(none_of("\\\'"), '\\', tag("'"));
-    // let esc_or_empty = alt((esc, tag("")));
-    // let res = delimited(tag("'"), esc_or_empty, tag("'"))(input)?;
-    //
-    // Ok(res)
+fn parse_string(input: &str) -> IResult<&str, String> {
     map(is_not("|\n"), |s: &str| s.to_string())(input)
+}
+
+fn parse_quoted_string(input: &str) -> IResult<&str, String> {
+    // Use delimited to match a string enclosed in quotes
+    delimited(
+        char('"'),                             // opening quote
+        map(is_not("\""), |s: &str| s.to_string()), // content of the string
+        char('"'),                             // closing quote
+    )(input)
 }
 
 fn parse_function(input: &str) -> IResult<&str, (String, Vec<String>)> {
@@ -77,15 +82,19 @@ fn parse_function(input: &str) -> IResult<&str, (String, Vec<String>)> {
 fn parse_pattern_actions(input: &str) -> IResult<&str, VariableValue> {
     let (input, pattern) = delimited(tag("/"), is_not("/"), tag("/"))(input)?;
 
-    let (input, command) = delimited(
-        preceded(multispace0, tag("{")),
-        many0(parse_function),
-        preceded(multispace0, tag("}")),
+    let (input, functions) = delimited(
+        tuple((multispace0, tag("{"), multispace0)),
+        separated_list0(
+            delimited(multispace0, tag("|"), multispace0),
+            parse_function
+        ),
+        tuple((multispace0, tag("}"), multispace0)),
     )(input)?;
+
 
     Ok((input, VariableValue::PatternAction {
         pattern: pattern.to_string(),
-        command: Function::FunctionWithArgs(command),
+        command: Function::Functions(functions),
     }))
 }
 
@@ -107,7 +116,7 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
         ),
         || (),
         |_, (key, value)| {
-            cases.insert(key.to_string(), Action { command: Function::FunctionWithArgs(vec![value]) });
+            cases.insert(key.to_string(), Action { command: Function::Functions(vec![value]) });
         },
     )(input)?;
 
@@ -115,7 +124,7 @@ fn parse_case_block(input: &str) -> IResult<&str, VariableValue> {
 
     if let Ok((remaining_input, cmd)) = parse_function(input) {
         default = Some(
-            Function::FunctionWithArgs(vec![cmd])
+            Function::Functions(vec![cmd])
         );
         input = remaining_input;
     }
@@ -141,7 +150,7 @@ fn parse_variable_value(input: &str) -> IResult<&str, VariableValue> {
     alt((
         parse_pattern_actions,
         parse_case_block,
-        map(parse_quote_string, VariableValue::String),
+        map(parse_quoted_string, VariableValue::String),
         parse_integer,
     ))(input)
 }
@@ -201,7 +210,7 @@ fn parse_hobbit_hole(input: &str) -> IResult<&str, Variables> {
 // Parser for the entire file
 fn parse_file(input: &str) -> IResult<&str, ShireFile> {
     let (input, variables) = parse_hobbit_hole(input)?;
-    let (input, body) = many1(parse_quote_string)(input)?; // Simplified for demonstration
+    let (input, body) = many1(parse_string)(input)?; // Simplified for demonstration
     Ok((input, ShireFile { variables, body }))
 }
 
@@ -209,23 +218,23 @@ fn parse_file(input: &str) -> IResult<&str, ShireFile> {
 mod tests {
     use super::*;
 
-    // #[test]
-    // fn test_parse_regex_block() {
-    //     assert_eq!(
-    //         parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\") }" ),
-    //         Ok((
-    //             "",
-    //             VariableValue::PatternAction {
-    //                 pattern: ".*.java".to_string(),
-    //                 command: Function::FunctionWithArgs(vec![
-    //                     ("grep".to_string(), vec!["error.log".to_string()]),
-    //                     ("sort".to_string(), vec![]),
-    //                     ("xargs".to_string(), vec!["rm".to_string()])
-    //                 ])
-    //             }
-    //         ))
-    //     );
-    // }
+    #[test]
+    fn test_parse_regex_block() {
+        assert_eq!(
+            parse_pattern_actions("/.*.java/ { grep(\"error.log\") | sort | xargs(\"rm\") }" ),
+            Ok((
+                "",
+                VariableValue::PatternAction {
+                    pattern: ".*.java".to_string(),
+                    command: Function::Functions(vec![
+                        ("grep".to_string(), vec!["error.log".to_string()]),
+                        ("sort".to_string(), vec![]),
+                        ("xargs".to_string(), vec!["rm".to_string()])
+                    ])
+                }
+            ))
+        );
+    }
 
     #[test]
     fn parse_block() {
@@ -238,7 +247,27 @@ variables:
 $var1
 "#;
 
-        println!("{:?}", parse_file(input));
+        assert_eq!(
+            parse_file(input),
+            Ok((
+                "\n",
+                ShireFile {
+                    variables: Variables {
+                        variables: vec![
+                            ("var2".to_string(), VariableValue::PatternAction {
+                                pattern: ".*.java".to_string(),
+                                command: Function::Functions(vec![
+                                    ("grep".to_string(), vec!["error.log".to_string()]),
+                                    ("sort".to_string(), vec![]),
+                                    ("xargs".to_string(), vec!["rm".to_string()])
+                                ])
+                            })
+                        ].into_iter().collect()
+                    },
+                    body: vec!["$var1".to_string()]
+                }
+            ))
+        );
     }
 
     // /// ```shire
