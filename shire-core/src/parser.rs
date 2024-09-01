@@ -336,33 +336,33 @@ fn parse_frontmatter_end(input: &str) -> IResult<&str, ()> {
 }
 
 fn parse_hobbit_hole(input: &str) -> IResult<&str, HobbitHole> {
-    let (mut conditionInput, _) = parse_frontmatter_start(input)?;
+    let (mut cond_input, _) = parse_frontmatter_start(input)?;
     let mut hole = HobbitHole::default();
-    while !conditionInput.is_empty() {
-        let (input, key) = take_while(|c: char| c.is_alphanumeric())(conditionInput)?;
-        let (valueinput, _) = delimited(multispace0, tag(":"), multispace0)(input)?;
-        conditionInput = valueinput;
+    while !cond_input.is_empty() {
+        let (input, key) = take_while(|c: char| c.is_alphanumeric())(cond_input)?;
+        let (value_input, _) = delimited(multispace0, tag(":"), multispace0)(input)?;
+        cond_input = value_input;
 
         match HobbitHoleKey::from(key) {
             HobbitHoleKey::Name => {
-                let (new, name) = parse_quoted_string(valueinput)?;
+                let (new, name) = parse_quoted_string(value_input)?;
                 hole.name = name;
-                conditionInput = new
+                cond_input = new
             }
             HobbitHoleKey::Description => {
-                let (new, description) = parse_string(valueinput)?;
+                let (new, description) = parse_string(value_input)?;
                 hole.description = Some(description);
-                conditionInput = new;
+                cond_input = new;
             }
             HobbitHoleKey::Interaction => {
-                let (new, interaction) = parse_string(valueinput)?;
+                let (new, interaction) = parse_string(value_input)?;
                 hole.interaction = Some(InteractionType::from(&interaction));
-                conditionInput = new;
+                cond_input = new;
             }
             HobbitHoleKey::ActionLocation => {
-                let (new, action_location) = parse_string(valueinput)?;
+                let (new, action_location) = parse_string(value_input)?;
                 hole.action_location = Some(ShireActionLocation::from(&action_location));
-                conditionInput = new;
+                cond_input = new;
             }
             HobbitHoleKey::Variables => {
                 let (new, vars) = fold_many0(
@@ -372,23 +372,23 @@ fn parse_hobbit_hole(input: &str) -> IResult<&str, HobbitHole> {
                         acc.insert(k, v);
                         acc
                     },
-                )(valueinput)?;
+                )(value_input)?;
 
                 hole.variables = vars;
-                conditionInput = new;
+                cond_input = new;
             }
         }
 
-        let (new_input, _) = multispace0(conditionInput)?;
-        conditionInput = new_input;
+        let (new_input, _) = multispace0(cond_input)?;
+        cond_input = new_input;
 
         // 检查 input 是否以 `---` 开头
-        if conditionInput.starts_with("---") || conditionInput.is_empty() {
+        if cond_input.starts_with("---") || cond_input.is_empty() {
             break;
         }
     }
 
-    let (input, _) = parse_frontmatter_end(conditionInput)?;
+    let (input, _) = parse_frontmatter_end(cond_input)?;
     Ok((input, hole))
 }
 
@@ -529,41 +529,39 @@ $var1
         );
     }
 
-    // /// ```shire
-    // /// ---
-    // /// variables:
-    // ///   "var1": "demo"
-    // ///   "var2": /.*.java/ { grep("error.log") | sort | xargs("rm")}
-    // ///   "var3": /.*.log/ {
-    // ///     case "$0" {
-    // ///       "error" { grep("ERROR") | sort | xargs("notify_admin") }
-    // ///       "warn" { grep("WARN") | sort | xargs("notify_admin") }
-    // ///       "info" { grep("INFO") | sort | xargs("notify_user") }
-    // ///       default  { grep("ERROR") | sort | xargs("notify_admin") }
-    // ///     }
-    // ///   }
-    // ///   "var4": 42
-    // /// ---
-    // /// ```
-    // #[test]
-    // fn test_parse_case_block() {
-    //     let input = r#""error" { grep("ERROR") | sort | xargs("notify_admin") }"#;
-    //     assert_eq!(
-    //         parse_case_block(input),
-    //         Ok((
-    //             "",
-    //             VariableValue::Case {
-    //                 pattern: "error".to_string(),
-    //                 cases: vec![
-    //                     ("error".to_string(), Command::Pipeline(vec![
-    //                         ("grep".to_string(), vec!["ERROR".to_string()]),
-    //                         ("sort".to_string(), vec![]),
-    //                         ("xargs".to_string(), vec!["notify_admin".to_string()])
-    //                     ]))
-    //                 ].into_iter().collect(),
-    //                 default: None
-    //             }
-    //         ))
-    //     );
-    // }
+    /// ```shire
+    /// ---
+    /// variables:
+    ///   "var1": "demo"
+    ///   "var2": /.*.java/ { grep("error.log") | sort | xargs("rm")}
+    ///   "var3": /.*.log/ {
+    ///     case "$0" {
+    ///       "error" { grep("ERROR") | sort | xargs("notify_admin") }
+    ///       "warn" { grep("WARN") | sort | xargs("notify_admin") }
+    ///       "info" { grep("INFO") | sort | xargs("notify_user") }
+    ///       default  { grep("ERROR") | sort | xargs("notify_admin") }
+    ///     }
+    ///   }
+    ///   "var4": 42
+    /// ---
+    /// ```
+    #[test]
+    fn test_parse_case_block() {
+        let input = r#"
+---
+variables:
+  "log": /.*.log/ {
+    case "$0" {
+      "error" { grep("ERROR") | sort | xargs("notify_admin") }
+      "warn" { grep("WARN") | sort | xargs("notify_admin") }
+      "info" { grep("INFO") | sort | xargs("notify_user") }
+      default  { grep("ERROR") | sort | xargs("notify_admin") }
+    }
+  }
+---
+"#;
+
+        let result = parse_file(input);
+        println!("{:?}", result);
+    }
 }
