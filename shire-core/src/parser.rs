@@ -184,7 +184,7 @@ impl From<&str> for HobbitHoleKey {
             "name" => HobbitHoleKey::Name,
             "description" => HobbitHoleKey::Description,
             "interaction" => HobbitHoleKey::Interaction,
-            "action_location" => HobbitHoleKey::ActionLocation,
+            "actionLocation" => HobbitHoleKey::ActionLocation,
             "variables" => HobbitHoleKey::Variables,
             _ => HobbitHoleKey::Name,
         }
@@ -202,7 +202,6 @@ fn parse_string(input: &str) -> IResult<&str, String> {
 }
 
 fn parse_quoted_string(input: &str) -> IResult<&str, String> {
-    // Use delimited to match a string enclosed in quotes
     delimited(
         char('"'),                             // opening quote
         map(is_not("\""), |s: &str| s.to_string()), // content of the string
@@ -337,26 +336,60 @@ fn parse_frontmatter_end(input: &str) -> IResult<&str, ()> {
 }
 
 fn parse_hobbit_hole(input: &str) -> IResult<&str, HobbitHole> {
-    let (input, _) = parse_frontmatter_start(input)?;
-    let (input, _) = tuple((multispace0, tag("variables"), multispace0, tag(":")))(input)?;
+    let (mut conditionInput, _) = parse_frontmatter_start(input)?;
+    let mut hole = HobbitHole::default();
+    while !conditionInput.is_empty() {
+        let (input, key) = take_while(|c: char| c.is_alphanumeric())(conditionInput)?;
+        let (valueinput, _) = delimited(multispace0, tag(":"), multispace0)(input)?;
+        conditionInput = valueinput;
 
-    let (input, vars) = fold_many0(
-        terminated(parse_variable, multispace0),
-        HashMap::new,
-        |mut acc, (k, v)| {
-            acc.insert(k, v);
-            acc
-        },
-    )(input)?;
+        match HobbitHoleKey::from(key) {
+            HobbitHoleKey::Name => {
+                let (new, name) = parse_quoted_string(valueinput)?;
+                hole.name = name;
+                conditionInput = new
+            }
+            HobbitHoleKey::Description => {
+                let (new, description) = parse_string(valueinput)?;
+                hole.description = Some(description);
+                conditionInput = new;
+            }
+            HobbitHoleKey::Interaction => {
+                let (new, interaction) = parse_string(valueinput)?;
+                hole.interaction = Some(InteractionType::from(&interaction));
+                conditionInput = new;
+            }
+            HobbitHoleKey::ActionLocation => {
+                let (new, action_location) = parse_string(valueinput)?;
+                hole.action_location = Some(ShireActionLocation::from(&action_location));
+                conditionInput = new;
+            }
+            HobbitHoleKey::Variables => {
+                let (new, vars) = fold_many0(
+                    terminated(parse_variable, multispace0),
+                    HashMap::new,
+                    |mut acc, (k, v)| {
+                        acc.insert(k, v);
+                        acc
+                    },
+                )(valueinput)?;
 
-    let (input, _) = parse_frontmatter_end(input)?;
-    Ok((input, HobbitHole {
-        name: "".to_string(),
-        description: None,
-        interaction: None,
-        action_location: None,
-        variables: vars,
-    }))
+                hole.variables = vars;
+                conditionInput = new;
+            }
+        }
+
+        let (new_input, _) = multispace0(conditionInput)?;
+        conditionInput = new_input;
+
+        // 检查 input 是否以 `---` 开头
+        if conditionInput.starts_with("---") || conditionInput.is_empty() {
+            break;
+        }
+    }
+
+    let (input, _) = parse_frontmatter_end(conditionInput)?;
+    Ok((input, hole))
 }
 
 // Parser for the entire file
