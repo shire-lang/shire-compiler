@@ -418,23 +418,21 @@ variables:
 "#;
 
         let result = parse_hobbit_hole(input);
-        println!("{:?}", result);
-        // assert_eq!(
-        //     result,
-        //     Ok((
-        //         "",
-        //         Variables {
-        //             variables: vec![
-        //                 ("name".to_string(), VariableValue::String("Summary".to_string())),
-        //                 ("description".to_string(), VariableValue::String("Generate Summary".to_string())),
-        //                 ("interaction".to_string(), VariableValue::String("AppendCursor".to_string())),
-        //                 ("actionLocation".to_string(), VariableValue::String("ContextMenu".to_string())),
-        //                 ("var1".to_string(), VariableValue::String("demo".to_string())),
-        //             ].into_iter().collect()
-        //         }
-        //     ))
-        // );
-
+        assert_eq!(
+            result,
+            Ok((
+                "",
+                HobbitHole {
+                    name: "Summary".to_string(),
+                    description: Some("\"Generate Summary\"".to_string()),
+                    interaction: Some(InteractionType::AppendCursor),
+                    action_location: Some(ShireActionLocation::ContextMenu),
+                    variables: vec![("var1".to_string(), VariableTransform::String("demo".to_string()))]
+                        .into_iter()
+                        .collect()
+                }
+            ))
+        );
     }
 
     #[test]
